@@ -348,10 +348,11 @@ gb_internal Ast *clone_ast(Ast *node, AstFile *f) {
 		n->RangeStmt.body  = clone_ast(n->RangeStmt.body, f);
 		break;
 	case Ast_UnrollRangeStmt:
-		n->UnrollRangeStmt.val0  = clone_ast(n->UnrollRangeStmt.val0, f);
-		n->UnrollRangeStmt.val1  = clone_ast(n->UnrollRangeStmt.val1, f);
-		n->UnrollRangeStmt.expr  = clone_ast(n->UnrollRangeStmt.expr, f);
-		n->UnrollRangeStmt.body  = clone_ast(n->UnrollRangeStmt.body, f);
+		n->UnrollRangeStmt.args = clone_ast_array(n->UnrollRangeStmt.args, f);
+		n->UnrollRangeStmt.val0 = clone_ast(n->UnrollRangeStmt.val0, f);
+		n->UnrollRangeStmt.val1 = clone_ast(n->UnrollRangeStmt.val1, f);
+		n->UnrollRangeStmt.expr = clone_ast(n->UnrollRangeStmt.expr, f);
+		n->UnrollRangeStmt.body = clone_ast(n->UnrollRangeStmt.body, f);
 		break;
 	case Ast_CaseClause:
 		n->CaseClause.list  = clone_ast_array(n->CaseClause.list, f);
@@ -1037,15 +1038,16 @@ gb_internal Ast *ast_range_stmt(AstFile *f, Token token, Slice<Ast *> vals, Toke
 	return result;
 }
 
-gb_internal Ast *ast_unroll_range_stmt(AstFile *f, Token unroll_token, Token for_token, Ast *val0, Ast *val1, Token in_token, Ast *expr, Ast *body) {
+gb_internal Ast *ast_unroll_range_stmt(AstFile *f, Token unroll_token, Slice<Ast *> args, Token for_token, Ast *val0, Ast *val1, Token in_token, Ast *expr, Ast *body) {
 	Ast *result = alloc_ast_node(f, Ast_UnrollRangeStmt);
 	result->UnrollRangeStmt.unroll_token = unroll_token;
+	result->UnrollRangeStmt.args      = args;
 	result->UnrollRangeStmt.for_token = for_token;
-	result->UnrollRangeStmt.val0 = val0;
-	result->UnrollRangeStmt.val1 = val1;
-	result->UnrollRangeStmt.in_token = in_token;
-	result->UnrollRangeStmt.expr  = expr;
-	result->UnrollRangeStmt.body  = body;
+	result->UnrollRangeStmt.val0      = val0;
+	result->UnrollRangeStmt.val1      = val1;
+	result->UnrollRangeStmt.in_token  = in_token;
+	result->UnrollRangeStmt.expr      = expr;
+	result->UnrollRangeStmt.body      = body;
 	return result;
 }
 
@@ -5137,6 +5139,40 @@ gb_internal Ast *parse_attribute(AstFile *f, Token token, TokenKind open_kind, T
 
 
 gb_internal Ast *parse_unrolled_for_loop(AstFile *f, Token unroll_token) {
+	Array<Ast *> args = {};
+
+	if (allow_token(f, Token_OpenParen)) {
+		f->expr_level++;
+		if (f->curr_token.kind == Token_CloseParen) {
+			syntax_error(f->curr_token, "#unroll expected at least 1 argument, got 0");
+		} else {
+			args = array_make<Ast *>(ast_allocator(f));
+			while (f->curr_token.kind != Token_CloseParen &&
+			       f->curr_token.kind != Token_EOF) {
+				Ast *arg = nullptr;
+				arg = parse_value(f);
+
+				if (f->curr_token.kind == Token_Eq) {
+					Token eq = expect_token(f, Token_Eq);
+					if (arg != nullptr && arg->kind != Ast_Ident) {
+						syntax_error(arg, "Expected an identifier for 'key=value'");
+					}
+					Ast *value = parse_value(f);
+					arg = ast_field_value(f, arg, value, eq);
+				}
+
+				array_add(&args, arg);
+
+				if (!allow_field_separator(f)) {
+					break;
+				}
+			}
+		}
+		f->expr_level--;
+		Token close = expect_closing(f, Token_CloseParen, str_lit("#unroll"));
+		gb_unused(close);
+	}
+
 	Token for_token = expect_token(f, Token_for);
 	Ast *val0 = nullptr;
 	Ast *val1 = nullptr;
@@ -5180,7 +5216,7 @@ gb_internal Ast *parse_unrolled_for_loop(AstFile *f, Token unroll_token) {
 	if (bad_stmt) {
 		return ast_bad_stmt(f, unroll_token, f->curr_token);
 	}
-	return ast_unroll_range_stmt(f, unroll_token, for_token, val0, val1, in_token, expr, body);
+	return ast_unroll_range_stmt(f, unroll_token, slice_from_array(args), for_token, val0, val1, in_token, expr, body);
 }
 
 gb_internal Ast *parse_stmt(AstFile *f) {
@@ -6265,10 +6301,16 @@ gb_internal u64 parse_vet_tag(Token token_for_pos, String s) {
 			syntax_error(token_for_pos, "Invalid vet flag name: %.*s", LIT(p));
 			error_line("\tExpected one of the following\n");
 			error_line("\tunused\n");
+			error_line("\tunused-variables\n");
+			error_line("\tunused-imports\n");
+			error_line("\tunused-procedures\n");
 			error_line("\tshadowing\n");
 			error_line("\tusing-stmt\n");
 			error_line("\tusing-param\n");
+			error_line("\tstyle\n");
 			error_line("\textra\n");
+			error_line("\tcast\n");
+			error_line("\ttabs\n");
 			return build_context.vet_flags;
 		}
 	}
@@ -6284,6 +6326,63 @@ gb_internal u64 parse_vet_tag(Token token_for_pos, String s) {
 	}
 	GB_ASSERT(vet_flags != 0 && vet_not_flags != 0);
 	return vet_flags &~ vet_not_flags;
+}
+
+gb_internal u64 parse_feature_tag(Token token_for_pos, String s) {
+	String const prefix = str_lit("feature");
+	GB_ASSERT(string_starts_with(s, prefix));
+	s = string_trim_whitespace(substring(s, prefix.len, s.len));
+
+	if (s.len == 0) {
+		return OptInFeatureFlag_NONE;
+	}
+
+	u64 feature_flags = 0;
+	u64 feature_not_flags = 0;
+
+	while (s.len > 0) {
+		String p = string_trim_whitespace(vet_tag_get_token(s, &s));
+		if (p.len == 0) {
+			break;
+		}
+
+		bool is_notted = false;
+		if (p[0] == '!') {
+			is_notted = true;
+			p = substring(p, 1, p.len);
+			if (p.len == 0) {
+				syntax_error(token_for_pos, "Expected a feature flag name after '!'");
+				return OptInFeatureFlag_NONE;
+			}
+		}
+
+		u64 flag = get_feature_flag_from_name(p);
+		if (flag != OptInFeatureFlag_NONE) {
+			if (is_notted) {
+				feature_not_flags |= flag;
+			} else {
+				feature_flags     |= flag;
+			}
+		} else {
+			ERROR_BLOCK();
+			syntax_error(token_for_pos, "Invalid feature flag name: %.*s", LIT(p));
+			error_line("\tExpected one of the following\n");
+			error_line("\tdynamic-literals\n");
+			return OptInFeatureFlag_NONE;
+		}
+	}
+
+	if (feature_flags == 0 && feature_not_flags == 0) {
+		return OptInFeatureFlag_NONE;
+	}
+	if (feature_flags == 0 && feature_not_flags != 0) {
+		return OptInFeatureFlag_NONE &~ feature_not_flags;
+	}
+	if (feature_flags != 0 && feature_not_flags == 0) {
+		return feature_flags;
+	}
+	GB_ASSERT(feature_flags != 0 && feature_not_flags != 0);
+	return feature_flags &~ feature_not_flags;
 }
 
 gb_internal String dir_from_path(String path) {
@@ -6399,6 +6498,9 @@ gb_internal bool parse_file_tag(const String &lc, const Token &tok, AstFile *f) 
 		} else if (command == "file") {
 			f->flags |= AstFile_IsPrivateFile;
 		}
+	} else if (string_starts_with(lc, str_lit("feature"))) {
+		f->feature_flags |= parse_feature_tag(tok, lc);
+		f->feature_flags_set = true;
 	} else if (lc == "lazy") {
 		if (build_context.ignore_lazy) {
 			// Ignore
@@ -6493,9 +6595,7 @@ gb_internal bool parse_file(Parser *p, AstFile *f) {
 	}
 	f->package_name = package_name.string;
 
-	// TODO: Shouldn't single file only matter for build tags? no-instrumentation for example
-	// should be respected even when in single file mode.
-	if (!f->pkg->is_single_file) {
+	{
 		if (docs != nullptr && docs->list.count > 0) {
 			for (Token const &tok : docs->list) {
 				GB_ASSERT(tok.kind == Token_Comment);
