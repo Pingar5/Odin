@@ -2504,6 +2504,37 @@ gb_internal void check_if_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags) {
 	check_close_scope(ctx);
 }
 
+
+gb_internal void check_proc_scope_stmt(CheckerContext *ctx, Ast *node, u32 mod_flags) {
+	ast_node(ps, ProcScopeStmt, node);
+	check_open_scope(ctx, node);
+	
+	if (ps->call->kind != Ast_CallExpr) {
+		error(ps->call, "Cannot open scope from expression which isn't a procedure call");
+	}
+
+	Operand operand = {Addressing_NoValue};
+	check_expr_base(ctx, &operand, ps->call, nullptr);
+	if (operand.mode != Addressing_NoValue) {
+		error(ps->call, "Cannot open scope from function with return value");
+	}
+	
+	ast_node(call, CallExpr, ps->call);
+	Entity *call_entity = entity_of_node(call->proc);
+	if (call_entity == nullptr || call_entity->kind != Entity_Procedure || !call_entity->Procedure.is_scoped) {
+		error(ps->call, "Cannot create scope from non-scoped procedure");
+	}
+	
+	Ast *exit_function_ident = call_entity->Procedure.scoped_exit_function;
+	Entity *exit_function_entity = entity_of_node(exit_function_ident);
+	if (exit_function_entity == nullptr || exit_function_entity->kind != Entity_Procedure) {
+		error(ps->call, "Scope end procedure is not a procedure");
+	}
+
+	check_stmt(ctx, ps->body, mod_flags);
+	check_close_scope(ctx);
+}
+
 gb_internal void check_return_stmt(CheckerContext *ctx, Ast *node) {
 	ast_node(rs, ReturnStmt, node);
 
@@ -2713,6 +2744,10 @@ gb_internal void check_stmt_internal(CheckerContext *ctx, Ast *node, u32 flags) 
 
 	case_ast_node(is, IfStmt, node);
 		check_if_stmt(ctx, node, mod_flags);
+	case_end;
+	
+	case_ast_node(ps, ProcScopeStmt, node);
+		check_proc_scope_stmt(ctx, node, mod_flags);
 	case_end;
 
 	case_ast_node(ws, WhenStmt, node);

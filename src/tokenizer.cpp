@@ -70,6 +70,8 @@ TOKEN_KIND(Token__ComparisonEnd, ""), \
 	TOKEN_KIND(Token_CloseParen,    ")"),   \
 	TOKEN_KIND(Token_OpenBracket,   "["),   \
 	TOKEN_KIND(Token_CloseBracket,  "]"),   \
+	TOKEN_KIND(Token_OpenDblBracket,   "-{"),   \
+	TOKEN_KIND(Token_CloseDblBracket,  "}-"),   \
 	TOKEN_KIND(Token_OpenBrace,     "{"),   \
 	TOKEN_KIND(Token_CloseBrace,    "}"),   \
 	TOKEN_KIND(Token_Colon,         ":"),   \
@@ -854,7 +856,13 @@ gb_internal void tokenizer_get_token(Tokenizer *t, Token *token, int repeat=0) {
 		case '[': token->kind = Token_OpenBracket;  break;
 		case ']': token->kind = Token_CloseBracket; break;
 		case '{': token->kind = Token_OpenBrace;    break;
-		case '}': token->kind = Token_CloseBrace;   break;
+		case '}':
+			token->kind = Token_CloseBrace;
+			if (t->curr_rune == '-') {
+				advance_to_next_rune(t);
+				token->kind = Token_CloseDblBracket;
+			}
+			break;
 		case '%':
 			token->kind = Token_Mod;
 			switch (t->curr_rune) {
@@ -932,6 +940,10 @@ gb_internal void tokenizer_get_token(Tokenizer *t, Token *token, int repeat=0) {
 			case '>':
 				advance_to_next_rune(t);
 				token->kind = Token_ArrowRight;
+				break;
+			case '{':
+				advance_to_next_rune(t);
+				token->kind = Token_OpenDblBracket;
 				break;
 			}
 			break;

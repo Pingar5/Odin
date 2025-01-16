@@ -981,6 +981,12 @@ gb_internal Ast *ast_assign_stmt(AstFile *f, Token op, Array<Ast *> const &lhs, 
 	return result;
 }
 
+gb_internal Ast *ast_proc_scope_stmt(AstFile *f, Ast *call, Ast *body) {
+	Ast *result = alloc_ast_node(f, Ast_ProcScopeStmt);
+	result->ProcScopeStmt.call = call;
+	result->ProcScopeStmt.body = body;
+	return result;
+}
 
 gb_internal Ast *ast_block_stmt(AstFile *f, Array<Ast *> const &stmts, Token open, Token close) {
 	Ast *result = alloc_ast_node(f, Ast_BlockStmt);
@@ -1832,9 +1838,9 @@ gb_internal Ast *        parse_expr(AstFile *f, bool lhs);
 gb_internal Ast *        parse_proc_type(AstFile *f, Token proc_token);
 gb_internal Array<Ast *> parse_stmt_list(AstFile *f);
 gb_internal Ast *        parse_stmt(AstFile *f);
-gb_internal Ast *        parse_body(AstFile *f);
+gb_internal Ast *        parse_body(AstFile *f, TokenKind open_token = Token_OpenBrace, TokenKind close_token = Token_CloseBrace);
 gb_internal Ast *        parse_do_body(AstFile *f, Token const &token, char const *msg);
-gb_internal Ast *        parse_block_stmt(AstFile *f, b32 is_when);
+gb_internal Ast *        parse_block_stmt(AstFile *f, b32 is_when, b32 use_dbl_bracket);
 
 
 
@@ -3183,10 +3189,10 @@ gb_internal Ast *parse_call_expr(AstFile *f, Ast *operand) {
 			break;
 		}
 	}
+	close_paren = expect_closing(f, Token_CloseParen, str_lit("argument list"));
+	
 	f->allow_newline = prev_allow_newline;
 	f->expr_level = prev_expr_level;
-	close_paren = expect_closing(f, Token_CloseParen, str_lit("argument list"));
-
 
 	Ast *call = ast_call_expr(f, operand, args, open_paren, close_paren, ellipsis);
 
@@ -3805,6 +3811,12 @@ gb_internal Ast *parse_simple_stmt(AstFile *f, u32 flags) {
 			return ast_assign_stmt(f, token, lhs, rhs);
 		}
 		break;
+		
+	case Token_OpenDblBracket:
+	{
+		Ast *body = parse_block_stmt(f, false, true);
+		return ast_proc_scope_stmt(f, lhs[0], body);
+	} break;
 
 	case Token_Colon:
 		expect_token_after(f, Token_Colon, "identifier list");
@@ -3894,7 +3906,7 @@ gb_internal Ast *parse_simple_stmt(AstFile *f, u32 flags) {
 		syntax_error(token, "Postfix '%.*s' statement is not supported", LIT(token.string));
 		break;
 	}
-
+		
 
 	#if 0
 	switch (token.kind) {
@@ -3910,13 +3922,18 @@ gb_internal Ast *parse_simple_stmt(AstFile *f, u32 flags) {
 
 
 
-gb_internal Ast *parse_block_stmt(AstFile *f, b32 is_when) {
+gb_internal Ast *parse_block_stmt(AstFile *f, b32 is_when, b32 use_dbl_bracket = false) {
 	skip_possible_newline_for_literal(f);
 	if (!is_when && f->curr_proc == nullptr) {
 		syntax_error(f->curr_token, "You cannot use a block statement in the file scope");
 		return ast_bad_stmt(f, f->curr_token, f->curr_token);
 	}
-	return parse_body(f);
+	
+	if (use_dbl_bracket) {
+		return parse_body(f, Token_OpenDblBracket, Token_CloseDblBracket);
+	} else {
+		return parse_body(f);
+	}
 }
 
 
@@ -4530,7 +4547,7 @@ gb_internal Ast *parse_type_or_ident(AstFile *f) {
 
 
 
-gb_internal Ast *parse_body(AstFile *f) {
+gb_internal Ast *parse_body(AstFile *f, TokenKind open_token, TokenKind close_token) {
 	Array<Ast *> stmts = {};
 	Token open, close;
 	isize prev_expr_level = f->expr_level;
@@ -4539,9 +4556,9 @@ gb_internal Ast *parse_body(AstFile *f) {
 	// NOTE(bill): The body may be within an expression so reset to zero
 	f->expr_level = 0;
 	// f->allow_newline = false;
-	open = expect_token(f, Token_OpenBrace);
+	open = expect_token(f, open_token);
 	stmts = parse_stmt_list(f);
-	close = expect_token(f, Token_CloseBrace);
+	close = expect_token(f, close_token);
 	f->expr_level = prev_expr_level;
 	f->allow_newline = prev_allow_newline;
 
@@ -5502,6 +5519,7 @@ gb_internal Array<Ast *> parse_stmt_list(AstFile *f) {
 
 	while (f->curr_token.kind != Token_case &&
 	       f->curr_token.kind != Token_CloseBrace &&
+	       f->curr_token.kind != Token_CloseDblBracket &&
 	       f->curr_token.kind != Token_EOF) {
 		parse_enforce_tabs(f);
 

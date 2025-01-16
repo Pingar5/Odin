@@ -307,6 +307,7 @@ gb_internal void add_scope(CheckerContext *c, Ast *node, Scope *scope) {
 	case Ast_UnionType:       node->UnionType.scope       = scope; break;
 	case Ast_EnumType:        node->EnumType.scope        = scope; break;
 	case Ast_BitFieldType:    node->BitFieldType.scope    = scope; break;
+	case Ast_ProcScopeStmt:   node->ProcScopeStmt.scope   = scope; break;
 	default: GB_PANIC("Invalid node for add_scope: %.*s", LIT(ast_strings[node->kind]));
 	}
 }
@@ -329,6 +330,7 @@ gb_internal Scope *scope_of_node(Ast *node) {
 	case Ast_UnionType:       return node->UnionType.scope;
 	case Ast_EnumType:        return node->EnumType.scope;
 	case Ast_BitFieldType:    return node->BitFieldType.scope;
+	case Ast_ProcScopeStmt:   return node->ProcScopeStmt.scope;
 	}
 	GB_PANIC("Invalid node for add_scope: %.*s", LIT(ast_strings[node->kind]));
 	return nullptr;
@@ -3689,6 +3691,31 @@ gb_internal DECL_ATTRIBUTE_PROC(proc_decl_attribute) {
 			error(value, "'%.*s' expects no parameter", LIT(name));
 		}
 		ac->instrumentation_exit = true;
+		return true;
+	} else if (name == "scoped") {
+		ac->is_scoped = true;
+		
+		
+		if (value == nullptr) {
+			// No scope exit function
+		} else if (value->kind == Ast_Ident) {
+			Operand o = {};
+			Entity *entity = check_ident(c, &o, value, nullptr, nullptr, true);
+			
+			value->tav.type = o.type;
+			value->tav.value = o.value;
+			value->tav.mode = o.mode;
+			value->tav.is_lhs = false;
+				
+			if (entity == nullptr || entity->kind != Entity_Procedure) {
+				error(value, "'%.*s' expects a procedure name as a parameter", LIT(name));
+			} else {
+				ac->scoped_exit_function = value;
+			}
+		} else {
+			error(value, "'%.*s' expects a procedure name as a parameter", LIT(name));
+		}
+		
 		return true;
 	}
 	return false;

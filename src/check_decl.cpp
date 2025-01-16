@@ -1323,6 +1323,9 @@ gb_internal void check_proc_decl(CheckerContext *ctx, Entity *e, DeclInfo *d) {
 	} else if (d->foreign_require_results && pt->result_count != 0) {
 		pt->require_results = true;
 	}
+	
+	e->Procedure.is_scoped = ac.is_scoped;
+	e->Procedure.scoped_exit_function = ac.scoped_exit_function;
 
 	if (ac.link_name.len > 0) {
 		String ln = ac.link_name;

@@ -257,6 +257,8 @@ struct Entity {
 			bool    has_instrumentation        : 1;
 			bool    is_memcpy_like             : 1;
 			bool    uses_branch_location       : 1;
+			bool    is_scoped                  : 1;
+			Ast *scoped_exit_function;
 		} Procedure;
 		struct {
 			Array<Entity *> entities;

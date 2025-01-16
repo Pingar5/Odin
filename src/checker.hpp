@@ -140,6 +140,8 @@ struct AttributeContext {
 	bool    instrumentation_enter : 1;
 	bool    instrumentation_exit  : 1;
 	bool    rodata                : 1;
+	bool    is_scoped             : 1;
+	Ast *scoped_exit_function;
 	u32 optimization_mode; // ProcedureOptimizationMode
 	i64 foreign_import_priority_index;
 	String extra_linker_flags;
@@ -165,6 +167,7 @@ gb_internal gb_inline AttributeContext make_attribute_context(String link_prefix
 typedef DECL_ATTRIBUTE_PROC(DeclAttributeProc);
 
 gb_internal void check_decl_attributes(CheckerContext *c, Array<Ast *> const &attributes, DeclAttributeProc *proc, AttributeContext *ac);
+gb_internal Entity * check_ident                    (CheckerContext *c, Operand *o, Ast *n, Type *named_type, Type *type_hint, bool allow_import_name);
 
 
 enum ProcCheckedState : u8 {

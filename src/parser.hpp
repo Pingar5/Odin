@@ -529,6 +529,11 @@ AST_KIND(_ComplexStmtBegin, "", bool) \
 		Ast * body;      \
 		Ast * else_stmt; \
 	}) \
+  AST_KIND(ProcScopeStmt, "procedure scope statement", struct { \
+    Scope *scope; \
+    Ast *call; \
+    Ast *body; \
+  }) \
 	AST_KIND(WhenStmt, "when statement", struct { \
 		Token token; \
 		Ast *cond; \

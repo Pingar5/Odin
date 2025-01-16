@@ -2395,6 +2395,26 @@ gb_internal void lb_build_if_stmt(lbProcedure *p, Ast *node) {
 	lb_start_block(p, done);
 }
 
+
+gb_internal void lb_build_proc_scope_stmt(lbProcedure *p, Ast *node) {
+	ast_node(ps, ProcScopeStmt, node);
+
+	lb_open_scope(p, ps->scope);
+	
+	lb_build_call_expr(p, ps->call);
+	
+	lb_build_stmt(p, ps->body);
+	
+	
+	ast_node(call, CallExpr, ps->call);
+	Entity *call_entity = entity_of_node(call->proc);
+	
+	lbValue value = lb_build_expr(p, call_entity->Procedure.scoped_exit_function);
+	lb_emit_call(p, value, {}, ProcInlining_none);
+	
+	lb_close_scope(p, lbDeferExit_Default, nullptr, node);
+}
+
 gb_internal void lb_build_for_stmt(lbProcedure *p, Ast *node) {
 	ast_node(fs, ForStmt, node);
 
@@ -2838,6 +2858,10 @@ gb_internal void lb_build_stmt(lbProcedure *p, Ast *node) {
 
 	case_ast_node(is, IfStmt, node);
 		lb_build_if_stmt(p, node);
+	case_end;
+
+	case_ast_node(is, ProcScopeStmt, node);
+		lb_build_proc_scope_stmt(p, node);
 	case_end;
 
 	case_ast_node(fs, ForStmt, node);
