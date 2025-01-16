@@ -2517,18 +2517,20 @@ gb_internal void check_proc_scope_stmt(CheckerContext *ctx, Ast *node, u32 mod_f
 	check_expr_base(ctx, &operand, ps->call, nullptr);
 	if (operand.mode != Addressing_NoValue) {
 		error(ps->call, "Cannot open scope from function with return value");
+		return;
 	}
 	
-	ast_node(call, CallExpr, ps->call);
-	Entity *call_entity = entity_of_node(call->proc);
+	Entity *call_entity = entity_of_node(ps->call->CallExpr.proc);
 	if (call_entity == nullptr || call_entity->kind != Entity_Procedure || !call_entity->Procedure.is_scoped) {
 		error(ps->call, "Cannot create scope from non-scoped procedure");
+		return;
 	}
 	
 	Ast *exit_function_ident = call_entity->Procedure.scoped_exit_function;
 	Entity *exit_function_entity = entity_of_node(exit_function_ident);
 	if (exit_function_entity == nullptr || exit_function_entity->kind != Entity_Procedure) {
 		error(ps->call, "Scope end procedure is not a procedure");
+		return;
 	}
 
 	check_stmt(ctx, ps->body, mod_flags);
